@@ -1,0 +1,724 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 846977d1dfed4968bc5f8bdb363285bc
+      name: 'Templates/Operating systems'
+  templates:
+    - uuid: aed6cdfe2fe844d4b3f64e8d5cc5a823
+      template: 'RDS by Zabbix agent active'
+      name: 'RDS by Zabbix agent active'
+      groups:
+        - name: 'Templates/Operating systems'
+      items:
+        - uuid: 59183ae894dd4bd9bd7737b486c8f5e4
+          name: 'RDS: Active sessions'
+          type: DEPENDENT
+          key: rds.sessions.active
+          delay: '0'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.active
+          master_item:
+            key: rds.sessions.get
+        - uuid: 467e03e06d4345688c5d2d0a666916b5
+          name: 'RDS: Session details'
+          type: DEPENDENT
+          key: rds.sessions.details
+          delay: '0'
+          value_type: TEXT
+          trends: '0'
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value);
+                  
+                  var lines = [];
+                  
+                  function val(x) {
+                      return (x === null || x === undefined || x === "") ? "-" : String(x);
+                  }
+                  
+                  function pad(x, n) {
+                      x = val(x);
+                  
+                      if (x.length > n) {
+                          return x.substring(0, n);
+                      }
+                  
+                      while (x.length < n) {
+                          x += " ";
+                      }
+                  
+                      return x;
+                  }
+                  
+                  lines.push(
+                      pad("User", 22) +
+                      pad("State", 14) +
+                      pad("Client", 20) +
+                      pad("IP", 16) +
+                      pad("Domain", 14) +
+                      pad("Protocol", 10) +
+                      pad("Idle", 8) +
+                      pad("RAM", 12) +
+                      pad("Proc", 6)
+                  );
+                  
+                  lines.push(
+                      "--------------------------------------------------------------------------------------------------------------------------"
+                  );
+                  
+                  for (var i = 0; i < data.sessions.length; i++) {
+                  
+                      var s = data.sessions[i];
+                  
+                      var idle = val(s.idle_minutes);
+                      if (idle !== "-") {
+                          idle += "m";
+                      }
+                  
+                      var ram = val(s.working_set_mb);
+                      if (ram !== "-") {
+                          ram += "MB";
+                      }
+                  
+                      var proc = val(s.process_count);
+                  
+                      lines.push(
+                          pad(s.user, 22) +
+                          pad(s.state, 14) +
+                          pad(s.client_name, 20) +
+                          pad(s.client_ip, 16) +
+                          pad(s.domain, 14) +
+                          pad(s.protocol, 10) +
+                          pad(idle, 8) +
+                          pad(ram, 12) +
+                          pad(proc, 6)
+                      );
+                  }
+                  
+                  return lines.join("\n");
+          master_item:
+            key: rds.sessions.get
+        - uuid: 06c96a043bff45aeb2903e2ab26adbe4
+          name: 'RDS: Disconnected sessions'
+          type: DEPENDENT
+          key: rds.sessions.disconnected
+          delay: '0'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.disconnected
+          master_item:
+            key: rds.sessions.get
+          triggers:
+            - uuid: 8621f054dd104250acb9f537bb48da87
+              expression: 'last(/RDS by Zabbix agent active/rds.sessions.disconnected)>{$RDS.DISCONNECTED.WARN}'
+              name: 'RDS: Too many disconnected sessions'
+              priority: WARNING
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: disconnected
+                - tag: scope
+                  value: host
+        - uuid: dbf07e94dc8143e282f6b5dbced67bf9
+          name: 'RDS: Sessions raw data'
+          type: ZABBIX_ACTIVE
+          key: rds.sessions.get
+          history: 1d
+          value_type: TEXT
+          trends: '0'
+          triggers:
+            - uuid: 0b2b9c6ce0ec484dab79aaaf7af3e26c
+              expression: 'nodata(/RDS by Zabbix agent active/rds.sessions.get,{$RDS.NODATA})=1'
+              name: 'RDS: Session monitoring data is not available'
+              priority: AVERAGE
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: data
+                - tag: scope
+                  value: availability
+        - uuid: 28c297fd6ec748c8bb06cb9e145f08c6
+          name: 'RDS: Total sessions'
+          type: DEPENDENT
+          key: rds.sessions.total
+          delay: '0'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.total
+          master_item:
+            key: rds.sessions.get
+          triggers:
+            - uuid: 24ba68f855064fd18c90e9a871e40403
+              expression: 'last(/RDS by Zabbix agent active/rds.sessions.total)>{$RDS.SESSIONS.MAX}'
+              name: 'RDS: Too many concurrent sessions'
+              priority: WARNING
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: sessions
+                - tag: scope
+                  value: host
+      discovery_rules:
+        - uuid: 7f6dc7c3a2ff4aec9abb97aaff6bfbe9
+          name: 'RDS: Session discovery'
+          type: DEPENDENT
+          key: rds.sessions.discovery
+          delay: '0'
+          lifetime: 1d
+          item_prototypes:
+            - uuid: a24cf12cf794409d95438235b528f155
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Client IP'
+              type: DEPENDENT
+              key: 'rds.session.client_ip[{#RDS.ID}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sessions[?(@.id == {#RDS.ID})].client_ip.first()'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: unknown
+              master_item:
+                key: rds.sessions.get
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: client_ip
+            - uuid: 2d190439a5074974816276e7f4687544
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Client hostname'
+              type: DEPENDENT
+              key: 'rds.session.client_name[{#RDS.ID}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sessions[?(@.id == {#RDS.ID})].client_name.first()'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: unknown
+              master_item:
+                key: rds.sessions.get
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: hostname
+            - uuid: 626703ef8bf94caeb2ef16d136ba9b76
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: CPU time'
+              type: DEPENDENT
+              key: 'rds.session.cpu[{#RDS.ID}]'
+              delay: '0'
+              units: s
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sessions[?(@.id == {#RDS.ID})].cpu_seconds.first()'
+              master_item:
+                key: rds.sessions.get
+            - uuid: aa2acecbbb18493cb79b8b72f79e1f87
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Disconnected time'
+              type: DEPENDENT
+              key: 'rds.session.disconnected_time[{#RDS.ID}]'
+              delay: '0'
+              units: m
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sessions[?(@.id == {#RDS.ID})].disconnected_minutes.first()'
+              master_item:
+                key: rds.sessions.get
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: disconnected_time
+            - uuid: 62a010bf5c0a43a6ad7634c3a14bffc6
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Client Domain'
+              type: DEPENDENT
+              key: 'rds.session.domain[{#RDS.ID}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sessions[?(@.id == {#RDS.ID})].domain.first()'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: unknown
+              master_item:
+                key: rds.sessions.get
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: domain
+            - uuid: f8558f2596844fe4be27d4a5533e7058
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Session duration'
+              type: DEPENDENT
+              key: 'rds.session.duration[{#RDS.ID}]'
+              delay: '0'
+              units: m
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sessions[?(@.id == {#RDS.ID})].session_minutes.first()'
+              master_item:
+                key: rds.sessions.get
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: duration
+              trigger_prototypes:
+                - uuid: becdab574f2e4f51bd87ee569b958ae1
+                  expression: 'last(/RDS by Zabbix agent active/rds.session.duration[{#RDS.ID}])>{$RDS.DURATION.WARN}'
+                  name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Long-running session'
+                  priority: INFO
+                  tags:
+                    - tag: component
+                      value: rds
+                    - tag: metric
+                      value: duration
+                    - tag: rds_session
+                      value: '{#RDS.ID}'
+                    - tag: rds_user
+                      value: '{#RDS.USER}'
+                    - tag: scope
+                      value: session
+            - uuid: a275fc256c2b4cf59d67e8a4cc6043a4
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Idle time'
+              type: DEPENDENT
+              key: 'rds.session.idle[{#RDS.ID}]'
+              delay: '0'
+              units: m
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sessions[?(@.id == {#RDS.ID})].idle_minutes.first()'
+              master_item:
+                key: rds.sessions.get
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: idle
+            - uuid: 95557ef519584d0b914f45a99f0a8834
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Memory'
+              type: DEPENDENT
+              key: 'rds.session.memory[{#RDS.ID}]'
+              delay: '0'
+              units: MB
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sessions[?(@.id == {#RDS.ID})].working_set_mb.first()'
+              master_item:
+                key: rds.sessions.get
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: memory
+              trigger_prototypes:
+                - uuid: aacbb246dcb24e92b6c8cf6bfd3f5743
+                  expression: 'avg(/RDS by Zabbix agent active/rds.session.memory[{#RDS.ID}],5m)>{$RDS.MEMORY.WARN}'
+                  name: 'RDS [{#RDS.USER} / {#RDS.ID}]: High memory usage'
+                  priority: WARNING
+                  tags:
+                    - tag: component
+                      value: rds
+                    - tag: metric
+                      value: memory
+                    - tag: rds_session
+                      value: '{#RDS.ID}'
+                    - tag: rds_user
+                      value: '{#RDS.USER}'
+                    - tag: scope
+                      value: session
+            - uuid: f133a24a4ba04b24862f9ea6f4fcae8c
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Processes'
+              type: DEPENDENT
+              key: 'rds.session.processes[{#RDS.ID}]'
+              delay: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sessions[?(@.id == {#RDS.ID})].process_count.first()'
+              master_item:
+                key: rds.sessions.get
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: processes
+              trigger_prototypes:
+                - uuid: cee47b7e8be14c8e94edac293b55fcfb
+                  expression: 'avg(/RDS by Zabbix agent active/rds.session.processes[{#RDS.ID}],5m)>{$RDS.PROCESSES.WARN}'
+                  name: 'RDS [{#RDS.USER} / {#RDS.ID}]: High process count'
+                  priority: WARNING
+                  tags:
+                    - tag: component
+                      value: rds
+                    - tag: metric
+                      value: processes
+                    - tag: rds_session
+                      value: '{#RDS.ID}'
+                    - tag: rds_user
+                      value: '{#RDS.USER}'
+                    - tag: scope
+                      value: session
+            - uuid: e84f1d8fe25b4d5da4f5fd74da2624a2
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Protocol'
+              type: DEPENDENT
+              key: 'rds.session.protocol[{#RDS.ID}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sessions[?(@.id == {#RDS.ID})].protocol.first()'
+              master_item:
+                key: rds.sessions.get
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: protocol
+            - uuid: eac6e7e7bee34e9ca72ca2320453a3f3
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: State'
+              type: DEPENDENT
+              key: 'rds.session.state[{#RDS.ID}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - '$.sessions[?(@.id == {#RDS.ID})].state.first()'
+              master_item:
+                key: rds.sessions.get
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: state
+          trigger_prototypes:
+            - uuid: 0f941a6472c44009a66681ae3596da72
+              expression: |
+                last(/RDS by Zabbix agent active/rds.session.state[{#RDS.ID}])="Active"
+                and
+                last(/RDS by Zabbix agent active/rds.session.idle[{#RDS.ID}])>{$RDS.IDLE.WARN}
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Long idle session'
+              priority: WARNING
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: idle
+                - tag: rds_session
+                  value: '{#RDS.ID}'
+                - tag: rds_user
+                  value: '{#RDS.USER}'
+                - tag: scope
+                  value: session
+            - uuid: 642e6f9779464ed5a57499d421fbae81
+              expression: |
+                last(/RDS by Zabbix agent active/rds.session.state[{#RDS.ID}])="Disconnected"
+                and
+                last(/RDS by Zabbix agent active/rds.session.disconnected_time[{#RDS.ID}])>{$RDS.DISCONNECTED.TIME.WARN}
+              name: 'RDS [{#RDS.USER} / {#RDS.ID}]: Session disconnected for too long'
+              priority: WARNING
+              tags:
+                - tag: component
+                  value: rds
+                - tag: metric
+                  value: disconnected
+                - tag: rds_session
+                  value: '{#RDS.ID}'
+                - tag: rds_user
+                  value: '{#RDS.USER}'
+                - tag: scope
+                  value: session
+          master_item:
+            key: rds.sessions.get
+          lld_macro_paths:
+            - lld_macro: '{#RDS.ID}'
+              path: $.id
+            - lld_macro: '{#RDS.SESSION}'
+              path: $.session_name
+            - lld_macro: '{#RDS.STATE}'
+              path: $.state
+            - lld_macro: '{#RDS.USER}'
+              path: $.user
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.sessions
+      macros:
+        - macro: '{$RDS.DISCONNECTED.TIME.WARN}'
+          value: '300'
+          description: 'Maximum allowed disconnected session duration in minutes'
+        - macro: '{$RDS.DISCONNECTED.WARN}'
+          value: '5'
+          description: 'Maximum allowed number of disconnected RDS sessions'
+        - macro: '{$RDS.DURATION.WARN}'
+          value: '1440'
+          description: 'Maximum allowed RDS session duration in minutes'
+        - macro: '{$RDS.IDLE.WARN}'
+          value: '240'
+          description: 'Maximum allowed session idle time in minutes'
+        - macro: '{$RDS.MEMORY.WARN}'
+          value: '2048'
+          description: 'Maximum allowed memory usage per RDS session in MB'
+        - macro: '{$RDS.NODATA}'
+          value: 5m
+          description: 'Maximum allowed time without RDS monitoring data'
+        - macro: '{$RDS.PROCESSES.WARN}'
+          value: '80'
+          description: 'Maximum allowed number of processes per RDS session'
+        - macro: '{$RDS.SESSIONS.MAX}'
+          value: '30'
+          description: 'Maximum allowed number of concurrent RDS sessions'
+      dashboards:
+        - uuid: d5a6b648852243b2b9f07a9b779bff55
+          name: 'RDS monitoring'
+          pages:
+            - name: Overview
+              widgets:
+                - type: item
+                  name: 'Total sessions'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'RDS by Zabbix agent active'
+                        key: rds.sessions.total
+                - type: svggraph
+                  name: 'RDS sessions'
+                  'y': '3'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: STRING
+                      name: ds.0.color
+                      value: FF0000
+                    - type: STRING
+                      name: ds.0.items.0
+                      value: 'RDS: Active sessions'
+                    - type: STRING
+                      name: ds.1.color
+                      value: '283593'
+                    - type: STRING
+                      name: ds.1.items.0
+                      value: 'RDS: Disconnected sessions'
+                    - type: STRING
+                      name: ds.2.color
+                      value: 29B6F6
+                    - type: STRING
+                      name: ds.2.items.0
+                      value: 'RDS: Total sessions'
+                    - type: STRING
+                      name: reference
+                      value: BZLMI
+                    - type: INTEGER
+                      name: righty
+                      value: '0'
+                - type: item
+                  name: 'Active sessions'
+                  x: '12'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'RDS by Zabbix agent active'
+                        key: rds.sessions.active
+                - type: item
+                  name: 'Disconnected sessions'
+                  x: '24'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        host: 'RDS by Zabbix agent active'
+                        key: rds.sessions.disconnected
+                - type: honeycomb
+                  name: 'RDS session idle time'
+                  x: '36'
+                  width: '36'
+                  height: '8'
+                  fields:
+                    - type: STRING
+                      name: items.0
+                      value: 'RDS [*]: Idle time'
+                    - type: STRING
+                      name: primary_label
+                      value: '{{ITEM.NAME}.regsub("^RDS \[(.*)\]: Idle time$","\1")}'
+                    - type: STRING
+                      name: primary_label_color
+                      value: 2D2D2D
+                    - type: STRING
+                      name: reference
+                      value: ZIEGD
+                    - type: STRING
+                      name: secondary_label_color
+                      value: 2D2D2D
+                    - type: STRING
+                      name: thresholds.0.color
+                      value: 524BBC
+                    - type: STRING
+                      name: thresholds.0.threshold
+                      value: '0'
+                    - type: STRING
+                      name: thresholds.1.color
+                      value: 0EC9AC
+                    - type: STRING
+                      name: thresholds.1.threshold
+                      value: '60'
+                    - type: STRING
+                      name: thresholds.2.color
+                      value: FFD54F
+                    - type: STRING
+                      name: thresholds.2.threshold
+                      value: '240'
+                    - type: STRING
+                      name: thresholds.3.color
+                      value: FF465C
+                    - type: STRING
+                      name: thresholds.3.threshold
+                      value: '480'
+            - name: Sessions
+              widgets:
+                - type: itemhistory
+                  width: '72'
+                  height: '7'
+                  fields:
+                    - type: ITEM
+                      name: columns.0.itemid
+                      value:
+                        host: 'RDS by Zabbix agent active'
+                        key: rds.sessions.details
+                    - type: INTEGER
+                      name: columns.0.monospace_font
+                      value: '1'
+                    - type: STRING
+                      name: columns.0.name
+                      value: 'RDS: Session details'
+                    - type: STRING
+                      name: reference
+                      value: QUBWB
+                    - type: INTEGER
+                      name: rf_rate
+                      value: '30'
+                    - type: INTEGER
+                      name: show_lines
+                      value: '1'
+                - type: honeycomb
+                  name: 'Session memory'
+                  'y': '7'
+                  width: '36'
+                  height: '6'
+                  fields:
+                    - type: STRING
+                      name: items.0
+                      value: 'RDS [*]: Memory'
+                    - type: STRING
+                      name: primary_label
+                      value: '{{ITEM.NAME}.regsub("^RDS \[([^/]+) /.*$","\1")}'
+                    - type: STRING
+                      name: primary_label_color
+                      value: 2D2D2D
+                    - type: STRING
+                      name: reference
+                      value: YSCNX
+                    - type: STRING
+                      name: secondary_label_color
+                      value: 2D2D2D
+                    - type: STRING
+                      name: thresholds.0.color
+                      value: 524BBC
+                    - type: STRING
+                      name: thresholds.0.threshold
+                      value: '0'
+                    - type: STRING
+                      name: thresholds.1.color
+                      value: 0EC9AC
+                    - type: STRING
+                      name: thresholds.1.threshold
+                      value: '500'
+                    - type: STRING
+                      name: thresholds.2.color
+                      value: FFD54F
+                    - type: STRING
+                      name: thresholds.2.threshold
+                      value: '1000'
+                    - type: STRING
+                      name: thresholds.3.color
+                      value: FF465C
+                    - type: STRING
+                      name: thresholds.3.threshold
+                      value: '2000'
+                - type: honeycomb
+                  name: 'Session duration'
+                  x: '36'
+                  'y': '7'
+                  width: '36'
+                  height: '6'
+                  fields:
+                    - type: STRING
+                      name: items.0
+                      value: 'RDS [*]: Session duration'
+                    - type: STRING
+                      name: primary_label
+                      value: '{{ITEM.NAME}.regsub("^RDS \[([^/]+) /.*$","\1")}'
+                    - type: STRING
+                      name: primary_label_color
+                      value: 2D2D2D
+                    - type: STRING
+                      name: reference
+                      value: NBLNW
+                    - type: STRING
+                      name: secondary_label_color
+                      value: 2D2D2D
+                    - type: STRING
+                      name: thresholds.0.color
+                      value: 524BBC
+                    - type: STRING
+                      name: thresholds.0.threshold
+                      value: '0'
+                    - type: STRING
+                      name: thresholds.1.color
+                      value: 0EC9AC
+                    - type: STRING
+                      name: thresholds.1.threshold
+                      value: '180'
+                    - type: STRING
+                      name: thresholds.2.color
+                      value: FFD54F
+                    - type: STRING
+                      name: thresholds.2.threshold
+                      value: '300'
+                    - type: STRING
+                      name: thresholds.3.color
+                      value: FF7043
+                    - type: STRING
+                      name: thresholds.3.threshold
+                      value: '480'

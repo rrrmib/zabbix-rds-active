@@ -1,0 +1,1 @@
+UserParameter=rds.sessions.get,C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\Zabbix Agent 2\scripts\rds_sessions.ps1"
