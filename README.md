@@ -126,3 +126,8 @@ This is intentional because RDS session IDs are temporary and can be reused.
 - Client IP is reported by the Windows Terminal Services API and may differ from
   an address observed elsewhere when NAT/gateways are involved.
 - The collector does not parse localized `quser.exe` output.
+
+## License
+
+This project is licensed under the MIT License.  
+See the [MIT License](LICENSE) file for details.
